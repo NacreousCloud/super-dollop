@@ -3,13 +3,17 @@ import { createRoot } from 'react-dom/client'
 import './sidepanel.css'
 import { useActiveTab } from './hooks'
 import { ensureContentScript, isRestrictedUrl } from './utils'
+import { StorageManager, type TestScenario } from './storage'
+import { EventRecorder, type RecordedEvent } from './event-recorder'
 import type { PickedElementMeta, RuntimeMessage } from './types'
+import { InspectorDetail } from './inspector-detail'
+import { ScenarioList } from './scenario-list'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Switch } from '../components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Alert, AlertDescription } from '../components/ui/alert'
-import { Save, Download, Play, Code, AlertTriangle, X, Lightbulb } from 'lucide-react'
+import { Save, Download, Play, Code, AlertTriangle, X, Lightbulb, Plus, Circle, Square, Mouse, Keyboard } from 'lucide-react'
 
 function App() {
   const tab = useActiveTab()
@@ -17,23 +21,47 @@ function App() {
   const tabUrl = tab?.url
   const [attached, setAttached] = useState(false)
   const [inspecting, setInspecting] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordedEvents, setRecordedEvents] = useState<RecordedEvent[]>([])
   const [lastPicked, setLastPicked] = useState<PickedElementMeta | null>(
     null
   )
   const [error, setError] = useState<string | null>(null)
   const [showJsonPreview, setShowJsonPreview] = useState(false)
   const [showAccessibilityWarning, setShowAccessibilityWarning] = useState(true)
+  const [currentScenarioId, setCurrentScenarioId] = useState<string | null>(null)
+  const [autoSave, setAutoSave] = useState(true)
 
   const [activeTab, setActiveTab] = useState<'record' | 'inspector' | 'builder' | 'scenario' | 'report'>('builder')
 
+  // Load settings on mount
   useEffect(() => {
-    const onMessage = (msg: RuntimeMessage) => {
+    StorageManager.load().then(data => {
+      setAutoSave(data.settings.autoSave)
+      setShowAccessibilityWarning(data.settings.showAccessibilityWarnings)
+    })
+  }, [])
+
+  useEffect(() => {
+    const onMessage = async (msg: RuntimeMessage) => {
       if (msg.type === 'ELEMENT_PICKED') {
         setLastPicked(msg.payload)
         setInspecting(false)
         setActiveTab('inspector')
-        // Show accessibility warning if using CSS selector
-        if (msg.payload.selector && !msg.payload.selector.includes('data-testid') && !msg.payload.role) {
+        
+        // Save to recent elements if detailed analysis is available
+        if (msg.payload.detailedAnalysis) {
+          try {
+            await StorageManager.addRecentElement(msg.payload.detailedAnalysis)
+          } catch (err) {
+            console.error('Failed to save recent element:', err)
+          }
+        }
+        
+        // Show accessibility warning if using CSS selector or has issues
+        if (msg.payload.detailedAnalysis?.hasAccessibilityIssues || 
+            (!msg.payload.detailedAnalysis?.selectorStrategies.testid.available && 
+             !msg.payload.detailedAnalysis?.selectorStrategies.accessibility.available)) {
           setShowAccessibilityWarning(true)
         }
       }
@@ -70,12 +98,51 @@ function App() {
 
   const detach = async () => {
     if (tabId == null) return
+    
+    // Stop recording if active
+    if (recording) {
+      await stopRecording()
+    }
+    
     try {
       await chrome.debugger.detach({ tabId })
     } catch {
       // ignore
     }
     setAttached(false)
+  }
+
+  const startRecording = async () => {
+    if (!tabId || !attached) {
+      setError('먼저 디버거를 연결해주세요.')
+      return
+    }
+
+    try {
+      const recorder = EventRecorder.getInstance()
+      await recorder.startRecording(tabId, currentScenarioId || undefined)
+      setRecording(true)
+      setRecordedEvents([])
+      setActiveTab('record')
+    } catch (err) {
+      setError('기록 시작 실패: ' + (err as Error).message)
+    }
+  }
+
+  const stopRecording = async () => {
+    try {
+      const recorder = EventRecorder.getInstance()
+      const events = await recorder.stopRecording()
+      setRecordedEvents(events)
+      setRecording(false)
+      
+      // Auto-save events if enabled and scenario exists
+      if (autoSave && currentScenarioId && events.length > 0) {
+        await recorder.saveEventsAsSteps()
+      }
+    } catch (err) {
+      setError('기록 중지 실패: ' + (err as Error).message)
+    }
   }
 
   const startInspect = async () => {
@@ -113,6 +180,96 @@ function App() {
     return '디버거 연결됨'
   }, [tabId, attachable, attached])
 
+  const createNewScenario = async () => {
+    try {
+      const scenario = await StorageManager.addScenario({
+        name: `테스트 시나리오 ${Date.now()}`,
+        description: `${tabUrl}에서 생성된 테스트`,
+        steps: [],
+        tags: ['web', 'accessibility'],
+        status: 'draft',
+        runCount: 0
+      })
+      setCurrentScenarioId(scenario.id)
+      setActiveTab('scenario')
+    } catch (err) {
+      setError('시나리오 생성 실패: ' + (err as Error).message)
+    }
+  }
+
+  const addElementAsStep = async () => {
+    if (!lastPicked?.detailedAnalysis || !currentScenarioId) {
+      if (!currentScenarioId) {
+        await createNewScenario()
+      }
+      return
+    }
+
+    try {
+      const bestSelector = getBestSelector(lastPicked.detailedAnalysis)
+      await StorageManager.addStep(currentScenarioId, {
+        type: 'click',
+        element: {
+          selector: bestSelector.selector,
+          role: lastPicked.detailedAnalysis.role,
+          name: lastPicked.detailedAnalysis.accessibleName,
+          analysis: lastPicked.detailedAnalysis
+        }
+      })
+    } catch (err) {
+      setError('스텝 추가 실패: ' + (err as Error).message)
+    }
+  }
+
+  const getBestSelector = (analysis: any) => {
+    const strategies = analysis.selectorStrategies
+    
+    // Priority: testid > accessibility > name > css
+    if (strategies.testid.available) return strategies.testid
+    if (strategies.accessibility.available) return strategies.accessibility  
+    if (strategies.name.available) return strategies.name
+    return strategies.css
+  }
+
+  const handleSave = async () => {
+    try {
+      if (lastPicked?.detailedAnalysis) {
+        await addElementAsStep()
+      }
+      // Could show success feedback here
+    } catch (err) {
+      setError('저장 실패: ' + (err as Error).message)
+    }
+  }
+
+  const handleExport = async () => {
+    try {
+      const data = await StorageManager.exportScenarios()
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cake-scenarios-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError('내보내기 실패: ' + (err as Error).message)
+    }
+  }
+
+  const getEventIcon = (type: string) => {
+    switch (type) {
+      case 'click': return <Mouse className="w-3 h-3 text-blue-600" />
+      case 'input': return <Keyboard className="w-3 h-3 text-green-600" />
+      case 'navigate': return <Play className="w-3 h-3 text-purple-600" />
+      default: return <Mouse className="w-3 h-3 text-gray-600" />
+    }
+  }
+
+  const formatTimestamp = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString()
+  }
+
   const mockJsonPreview = {
     scenario: "접근성 기반 테스트",
     steps: [
@@ -126,9 +283,18 @@ function App() {
   }
 
   // Check if current picked element needs accessibility improvement
-  const needsAccessibilityImprovement = lastPicked && 
-    (!lastPicked.role || !lastPicked.name || 
-     (lastPicked.selector && !lastPicked.selector.includes('data-testid')))
+  const needsAccessibilityImprovement = lastPicked?.detailedAnalysis?.hasAccessibilityIssues || 
+    (lastPicked && !lastPicked.detailedAnalysis?.selectorStrategies.testid.available && 
+     !lastPicked.detailedAnalysis?.selectorStrategies.accessibility.available)
+
+  const handleCopySelector = async (selector: string) => {
+    try {
+      await navigator.clipboard.writeText(selector)
+      // Could show a toast here
+    } catch (err) {
+      console.error('Failed to copy selector:', err)
+    }
+  }
 
   return (
     <div className="w-[360px] h-[720px] bg-background border-r flex flex-col">
@@ -145,12 +311,12 @@ function App() {
           <AlertDescription className="text-amber-800 pr-6">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">CSS 셀렉터 기반 요소 발견</span>
+                <span className="font-medium text-sm">접근성 개선 필요</span>
                 <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
                   안정성 낮음
                 </Badge>
               </div>
-              <div className="text-xs">CSS 셀렉터는 페이지 구조 변경 시 쉽게 깨질 수 있습니다.</div>
+              <div className="text-xs">선택된 요소에 접근성 개선이 필요합니다.</div>
               <div className="flex items-start gap-1">
                 <Lightbulb className="w-3 h-3 text-amber-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs space-y-1">
@@ -194,7 +360,7 @@ function App() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
         <TabsList className="grid w-full grid-cols-5 mx-3 mt-2">
           <TabsTrigger value="record" className="text-xs">기록</TabsTrigger>
           <TabsTrigger value="inspector" className="text-xs">인스펙터</TabsTrigger>
@@ -204,11 +370,70 @@ function App() {
         </TabsList>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TabsContent value="record" className="flex-1 mt-0 p-3">
-            <p className="text-sm text-muted-foreground">기록 탭은 이벤트 캡처를 표시합니다. (모형 UI)</p>
+          <TabsContent value="record" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">이벤트 기록</h3>
+              {!recording ? (
+                <Button size="sm" onClick={startRecording} disabled={!attached}>
+                  <Circle className="w-3 h-3 mr-1" />
+                  기록 시작
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={stopRecording}>
+                  <Square className="w-3 h-3 mr-1" />
+                  기록 중지
+                </Button>
+              )}
+            </div>
+
+            {recording && (
+              <Alert className="bg-red-50 border-red-200">
+                <Circle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  이벤트를 기록하고 있습니다. 웹 페이지에서 상호작용하세요.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {recordedEvents.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  기록된 이벤트 {recordedEvents.length}개
+                </div>
+                {recordedEvents.map((event) => (
+                  <div key={event.id} className="p-2 border rounded-lg bg-card">
+                    <div className="flex items-center gap-2 mb-1">
+                      {getEventIcon(event.type)}
+                      <span className="text-sm font-medium capitalize">{event.type}</span>
+                      <Badge variant="outline" className="text-xs">
+                        {formatTimestamp(event.timestamp)}
+                      </Badge>
+                    </div>
+                    {event.target && (
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <div><strong>요소:</strong> {event.target.tagName}</div>
+                        {event.target.name && (
+                          <div><strong>이름:</strong> {event.target.name}</div>
+                        )}
+                        {event.value && (
+                          <div><strong>값:</strong> {event.value}</div>
+                        )}
+                        <code className="text-xs bg-muted p-1 rounded block break-all">
+                          {event.target.selector}
+                        </code>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-8">
+                {recording ? '상호작용을 기다리는 중...' : '기록 버튼을 눌러 이벤트 캡처를 시작하세요'}
+              </div>
+            )}
           </TabsContent>
 
-          <TabsContent value="inspector" className="flex-1 mt-0 p-3 space-y-3">
+          <TabsContent value="inspector" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
             {!inspecting ? (
               <Button onClick={startInspect} disabled={tabId == null} className="w-full">
                 요소 선택 시작
@@ -219,7 +444,26 @@ function App() {
               </Button>
             )}
 
-            {lastPicked && (
+            {lastPicked?.detailedAnalysis ? (
+              <>
+                <InspectorDetail 
+                  data={lastPicked.detailedAnalysis} 
+                  onCopySelector={handleCopySelector}
+                />
+                
+                {/* Quick Actions */}
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={addElementAsStep} className="flex-1">
+                    <Plus className="w-3 h-3 mr-1" />
+                    스텝 추가
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={createNewScenario}>
+                    새 시나리오
+                  </Button>
+                </div>
+              </>
+            ) : lastPicked ? (
+              // Fallback for basic analysis
               <div className="space-y-2 p-3 border rounded-lg bg-card">
                 <div className="text-sm">
                   <strong>역할(role):</strong> 
@@ -236,11 +480,10 @@ function App() {
                     {lastPicked.selector}
                   </code>
                 </div>
-                {needsAccessibilityImprovement && (
-                  <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
-                    💡 이 요소는 접근성 개선이 필요합니다. data-testid나 ARIA 속성 추가를 권장합니다.
-                  </div>
-                )}
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-8">
+                요소를 선택하여 상세 분석을 확인하세요
               </div>
             )}
           </TabsContent>
@@ -249,8 +492,12 @@ function App() {
             <p className="text-sm text-muted-foreground">빌더 탭은 모델 기반 테스트 구성을 제공합니다. (모형 UI)</p>
           </TabsContent>
 
-          <TabsContent value="scenario" className="flex-1 mt-0 p-3">
-            <p className="text-sm text-muted-foreground">시나리오 목록과 실행을 관리합니다. (모형 UI)</p>
+          <TabsContent value="scenario" className="flex-1 mt-0 p-3 overflow-hidden">
+            <ScenarioList 
+              currentScenarioId={currentScenarioId}
+              onScenarioSelect={(scenario: TestScenario) => setCurrentScenarioId(scenario.id)}
+              onCreateNew={createNewScenario}
+            />
           </TabsContent>
 
           <TabsContent value="report" className="flex-1 mt-0 p-3">
@@ -290,10 +537,10 @@ function App() {
             />
           </div>
           <div className="flex gap-1">
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant="outline" onClick={handleSave}>
               <Save className="w-3 h-3" />
             </Button>
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant="outline" onClick={handleExport}>
               <Download className="w-3 h-3" />
             </Button>
           </div>
