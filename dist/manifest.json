@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Cake E2E Builder",
+  "description": "접근성 기반 모델과 CDP를 활용한 노코드 E2E 테스트 작성 도구",
+  "version": "0.1.0",
+  "action": { "default_title": "Cake E2E" },
+  "permissions": [
+    "debugger",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "extension/sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+} 
