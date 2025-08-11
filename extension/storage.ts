@@ -123,6 +123,26 @@ export class StorageManager {
     await this.save({ scenarios: data.scenarios })
   }
 
+  static async getScenario(id: string): Promise<TestScenario | null> {
+    const data = await this.load()
+    return data.scenarios.find(s => s.id === id) || null
+  }
+
+  static async updateScenarioStatus(id: string, status: TestScenario['status']): Promise<void> {
+    await this.updateScenario(id, { status })
+  }
+
+  static async updateLastRun(id: string): Promise<void> {
+    const data = await this.load()
+    const scenario = data.scenarios.find(s => s.id === id)
+    
+    if (scenario) {
+      scenario.lastRun = Date.now()
+      scenario.runCount = (scenario.runCount || 0) + 1
+      await this.save({ scenarios: data.scenarios })
+    }
+  }
+
   static async addStep(scenarioId: string, step: Omit<TestStep, 'id' | 'timestamp'>): Promise<void> {
     const newStep: TestStep = {
       ...step,

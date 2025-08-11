@@ -1,18 +1,22 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Separator } from '../components/ui/separator'
-import { CheckCircle, AlertTriangle, XCircle, Copy, Eye } from 'lucide-react'
+import { CheckCircle, AlertTriangle, XCircle, Copy, Eye, Plus } from 'lucide-react'
 import type { DOMNodeData } from './dom-analyzer'
+import type { AssertionConfig } from './types'
+import { AssertionConfigComponent } from './assertion-config'
 
 interface InspectorDetailProps {
   data: DOMNodeData
   onCopySelector?: (selector: string) => void
   onHighlight?: () => void
+  onAddAssertion?: (selector: string, assertion: AssertionConfig) => void
 }
 
-export function InspectorDetail({ data, onCopySelector, onHighlight }: InspectorDetailProps) {
+export function InspectorDetail({ data, onCopySelector, onHighlight, onAddAssertion }: InspectorDetailProps) {
+  const [showAssertionConfig, setShowAssertionConfig] = useState<string | null>(null)
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'bg-green-100 text-green-800 border-green-200'
     if (score >= 60) return 'bg-yellow-100 text-yellow-800 border-yellow-200'
@@ -116,15 +120,27 @@ export function InspectorDetail({ data, onCopySelector, onHighlight }: Inspector
                       {strategyData.score}점
                     </Badge>
                   </div>
-                  {onCopySelector && (
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      onClick={() => onCopySelector(strategyData.selector)}
-                    >
-                      <Copy className="w-3 h-3" />
-                    </Button>
-                  )}
+                  <div className="flex gap-1">
+                    {onCopySelector && (
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => onCopySelector(strategyData.selector)}
+                      >
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                    )}
+                    {onAddAssertion && (
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => setShowAssertionConfig(strategyData.selector)}
+                        title="검증 추가"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {strategy.description}
@@ -176,6 +192,22 @@ export function InspectorDetail({ data, onCopySelector, onHighlight }: Inspector
           </div>
         </CardContent>
       </Card>
+
+      {/* Assertion Configuration Modal */}
+      {showAssertionConfig && onAddAssertion && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <AssertionConfigComponent
+              selector={showAssertionConfig}
+              onAdd={(assertion) => {
+                onAddAssertion(showAssertionConfig, assertion)
+                setShowAssertionConfig(null)
+              }}
+              onCancel={() => setShowAssertionConfig(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 } 

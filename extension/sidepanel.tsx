@@ -5,7 +5,7 @@ import { useActiveTab } from './hooks'
 import { ensureContentScript, isRestrictedUrl } from './utils'
 import { StorageManager, type TestScenario } from './storage'
 import { EventRecorder, type RecordedEvent } from './event-recorder'
-import type { PickedElementMeta, RuntimeMessage } from './types'
+import type { PickedElementMeta, RuntimeMessage, AssertionConfig, TestStep } from './types'
 import { InspectorDetail } from './inspector-detail'
 import { ScenarioList } from './scenario-list'
 import { Button } from '../components/ui/button'
@@ -218,6 +218,38 @@ function App() {
       })
     } catch (err) {
       setError('스텝 추가 실패: ' + (err as Error).message)
+    }
+  }
+
+  const addAssertionAsStep = async (selector: string, assertion: AssertionConfig) => {
+    let scenarioId = currentScenarioId
+    if (!scenarioId) {
+      await createNewScenario()
+      scenarioId = currentScenarioId // Should be set by createNewScenario
+      if (!scenarioId) return
+    }
+
+    try {
+      // Use the existing step format from storage.ts
+      const step = {
+        id: Date.now().toString(),
+        type: 'assert' as const,
+        timestamp: Date.now(),
+        element: {
+          selector,
+          role: lastPicked?.detailedAnalysis?.role,
+          name: lastPicked?.detailedAnalysis?.accessibleName,
+        },
+        assertion: {
+          type: assertion.type as any,
+          expected: String(assertion.expected)
+        }
+      }
+
+      await StorageManager.addStep(scenarioId, step)
+      setError(null)
+    } catch (err) {
+      setError('검증 추가 실패: ' + (err as Error).message)
     }
   }
 
@@ -449,6 +481,7 @@ function App() {
                 <InspectorDetail 
                   data={lastPicked.detailedAnalysis} 
                   onCopySelector={handleCopySelector}
+                  onAddAssertion={addAssertionAsStep}
                 />
                 
                 {/* Quick Actions */}
