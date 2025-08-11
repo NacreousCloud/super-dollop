@@ -1,13 +1,8 @@
 import type { RuntimeMessage } from './types'
+import { DOMAnalyzer, type DOMNodeData } from './dom-analyzer'
 
 type StartInspectMsg = { type: 'START_INSPECT' }
 type StopInspectMsg = { type: 'STOP_INSPECT' }
-
-type PickedElementMeta = {
-  role: string | null
-  name: string | null
-  selector: string
-}
 
 let overlay: HTMLDivElement | null = null
 let inspecting = false
@@ -44,75 +39,22 @@ function updateOverlay(el: Element) {
   o.style.top = box.top + 'px'
   o.style.width = Math.max(0, box.width) + 'px'
   o.style.height = Math.max(0, box.height) + 'px'
-}
-
-function simpleRole(el: Element): string | null {
-  const roleAttr = el.getAttribute('role')
-  if (roleAttr) return roleAttr
-  const tag = el.tagName.toLowerCase()
-  if (tag === 'button') return 'button'
-  if (tag === 'a' && (el as HTMLAnchorElement).href) return 'link'
-  if (tag === 'input') {
-    const type = (el as HTMLInputElement).type
-    if (type === 'checkbox') return 'checkbox'
-    if (type === 'radio') return 'radio'
-    return 'textbox'
-  }
-  if (tag === 'select') return 'combobox'
-  if (tag === 'textarea') return 'textbox'
-  return null
-}
-
-function simpleName(el: Element): string | null {
-  const ariaLabel = el.getAttribute('aria-label')
-  if (ariaLabel) return ariaLabel.trim() || null
-  const labelledBy = el.getAttribute('aria-labelledby')
-  if (labelledBy) {
-    const text = labelledBy
-      .split(/\s+/)
-      .map((id) => document.getElementById(id)?.textContent?.trim() || '')
-      .filter(Boolean)
-      .join(' ')
-      .trim()
-    if (text) return text
-  }
-  const alt = (el as HTMLElement).getAttribute?.('alt')
-  if (alt) return alt
-  const text = (el as HTMLElement).innerText?.trim() || ''
-  if (text) return text
-  return null
-}
-
-function cssPath(el: Element): string {
-  const parts: string[] = []
-  let node: Element | null = el
-  while (node && node.nodeType === Node.ELEMENT_NODE && parts.length < 6) {
-    let selector = node.nodeName.toLowerCase()
-    if (node.id) {
-      selector += `#${CSS.escape(node.id)}`
-      parts.unshift(selector)
-      break
-    } else {
-      let sib = node
-      let nth = 1
-      let ps: Element | null = sib.previousElementSibling
-      while (ps) {
-        if (ps.nodeName === node.nodeName) nth++
-        ps = ps.previousElementSibling
-      }
-      selector += `:nth-of-type(${nth})`
-    }
-    parts.unshift(selector)
-    node = node.parentElement
-  }
-  return parts.join(' > ')
-}
-
-function pickMeta(el: Element): PickedElementMeta {
-  return {
-    role: simpleRole(el),
-    name: simpleName(el),
-    selector: cssPath(el),
+  
+  // Update overlay color based on accessibility score
+  const analysis = DOMAnalyzer.analyzeElement(el)
+  const score = analysis.selectorStrategies.accessibility.score + 
+                analysis.selectorStrategies.name.score + 
+                analysis.selectorStrategies.testid.score
+  
+  if (score > 180) {
+    o.style.border = '2px solid #10b981' // Green for good accessibility
+    o.style.background = 'rgba(16,185,129,0.15)'
+  } else if (score > 120) {
+    o.style.border = '2px solid #f59e0b' // Yellow for moderate
+    o.style.background = 'rgba(245,158,11,0.15)'
+  } else {
+    o.style.border = '2px solid #ef4444' // Red for poor accessibility
+    o.style.background = 'rgba(239,68,68,0.15)'
   }
 }
 
@@ -130,8 +72,22 @@ function startInspect() {
     e.stopPropagation()
     const target = e.target as Element | null
     if (!target) return
-    const meta = pickMeta(target)
-    chrome.runtime.sendMessage({ type: 'ELEMENT_PICKED', payload: meta })
+    
+    // Use the new DOMAnalyzer for comprehensive analysis
+    const analysis = DOMAnalyzer.analyzeElement(target)
+    
+    // Send the detailed analysis data
+    chrome.runtime.sendMessage({ 
+      type: 'ELEMENT_PICKED', 
+      payload: {
+        // Keep backward compatibility with existing interface
+        role: analysis.role,
+        name: analysis.accessibleName,
+        selector: analysis.selectorStrategies.css.selector,
+        // Add new detailed analysis
+        detailedAnalysis: analysis
+      }
+    })
     stopInspect()
   }
   window.addEventListener('mousemove', onMouseMove, true)
