@@ -55,7 +55,7 @@ Error generating stack: `+s.message+`
           
           return {
             selector,
-            tagName: element.tagName.toLowerCase(),
+            tagName: element.tagName?.toLowerCase() || 'unknown',
             role: element.getAttribute('role') || getImplicitRole(element),
             name: getAccessibleName(element),
             coordinates: {
@@ -77,7 +77,7 @@ Error generating stack: `+s.message+`
           const parts = [];
           let current = element;
           while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 6) {
-            let selector = current.nodeName.toLowerCase();
+            let selector = current.nodeName?.toLowerCase() || 'unknown';
             if (current.id) {
               selector += \`#\${current.id}\`;
               parts.unshift(selector);
@@ -98,7 +98,7 @@ Error generating stack: `+s.message+`
         };
 
         const getImplicitRole = (element) => {
-          const tag = element.tagName.toLowerCase();
+          const tag = element.tagName?.toLowerCase() || 'unknown';
           const roleMap = {
             'button': 'button',
             'a': element.hasAttribute('href') ? 'link' : null,
@@ -133,7 +133,7 @@ Error generating stack: `+s.message+`
             if (text) return text;
           }
           
-          if (element.tagName.toLowerCase() === 'input') {
+          if (element.tagName?.toLowerCase() === 'input') {
             const id = element.getAttribute('id');
             if (id) {
               const label = document.querySelector(\`label[for="\${id}"]\`);

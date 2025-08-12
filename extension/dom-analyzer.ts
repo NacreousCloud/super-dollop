@@ -29,7 +29,7 @@ export interface AccessibilityAnalysis {
 
 export class DOMAnalyzer {
   static analyzeElement(element: Element): DOMNodeData {
-    const tag = element.tagName.toLowerCase()
+    const tag = element.tagName?.toLowerCase() || 'unknown'
     const role = this.getRole(element)
     const accessibleName = this.getAccessibleName(element)
     const attributes = this.getAttributes(element)
@@ -55,7 +55,7 @@ export class DOMAnalyzer {
     if (explicitRole) return explicitRole
 
     // Implicit roles based on tag
-    const tag = element.tagName.toLowerCase()
+    const tag = element.tagName?.toLowerCase() || 'unknown'
     const implicitRoles: Record<string, string | undefined> = {
       'button': 'button',
       'a': element.hasAttribute('href') ? 'link' : undefined,
@@ -81,7 +81,7 @@ export class DOMAnalyzer {
   }
 
   private static getInputRole(input: HTMLInputElement): string {
-    const type = input.type.toLowerCase()
+    const type = input.type?.toLowerCase() || 'text'
     const inputRoles: Record<string, string> = {
       'button': 'button',
       'submit': 'button',
@@ -110,7 +110,7 @@ export class DOMAnalyzer {
     }
 
     // Associated label
-    if (element.tagName.toLowerCase() === 'input') {
+    if (element.tagName?.toLowerCase() === 'input') {
       const id = element.getAttribute('id')
       if (id) {
         const label = document.querySelector(`label[for="${id}"]`)
@@ -121,7 +121,7 @@ export class DOMAnalyzer {
     }
 
     // Alt text for images
-    if (element.tagName.toLowerCase() === 'img') {
+    if (element.tagName?.toLowerCase() === 'img') {
       const alt = element.getAttribute('alt')
       if (alt !== null) return alt // Even empty alt is intentional
     }
@@ -204,7 +204,7 @@ export class DOMAnalyzer {
     let current: Element | null = element
 
     while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 6) {
-      let selector = current.nodeName.toLowerCase()
+      let selector = current.nodeName?.toLowerCase() || 'unknown'
 
       // Prefer ID
       if (current.id) {
@@ -280,13 +280,13 @@ export class DOMAnalyzer {
   }
 
   private static needsAccessibleName(element: Element): boolean {
-    const tag = element.tagName.toLowerCase()
+    const tag = element.tagName?.toLowerCase() || 'unknown'
     const interactiveTags = ['button', 'a', 'input', 'select', 'textarea']
     return interactiveTags.includes(tag) || element.hasAttribute('role')
   }
 
   private static isInteractive(element: Element): boolean {
-    const tag = element.tagName.toLowerCase()
+    const tag = element.tagName?.toLowerCase() || 'unknown'
     const interactiveTags = ['button', 'a', 'input', 'select', 'textarea']
     return interactiveTags.includes(tag) || 
            element.hasAttribute('onclick') || 
@@ -297,6 +297,6 @@ export class DOMAnalyzer {
   private static generateId(element: Element): string {
     return element.getAttribute('data-testid') || 
            element.getAttribute('id') || 
-           `${element.tagName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+           `${element.tagName?.toLowerCase() || 'unknown'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 } 

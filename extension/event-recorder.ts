@@ -137,7 +137,7 @@ export class EventRecorder {
           
           return {
             selector,
-            tagName: element.tagName.toLowerCase(),
+            tagName: element.tagName?.toLowerCase() || 'unknown',
             role: element.getAttribute('role') || getImplicitRole(element),
             name: getAccessibleName(element),
             coordinates: {
@@ -159,7 +159,7 @@ export class EventRecorder {
           const parts = [];
           let current = element;
           while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 6) {
-            let selector = current.nodeName.toLowerCase();
+            let selector = current.nodeName?.toLowerCase() || 'unknown';
             if (current.id) {
               selector += \`#\${current.id}\`;
               parts.unshift(selector);
@@ -180,7 +180,7 @@ export class EventRecorder {
         };
 
         const getImplicitRole = (element) => {
-          const tag = element.tagName.toLowerCase();
+          const tag = element.tagName?.toLowerCase() || 'unknown';
           const roleMap = {
             'button': 'button',
             'a': element.hasAttribute('href') ? 'link' : null,
@@ -215,7 +215,7 @@ export class EventRecorder {
             if (text) return text;
           }
           
-          if (element.tagName.toLowerCase() === 'input') {
+          if (element.tagName?.toLowerCase() === 'input') {
             const id = element.getAttribute('id');
             if (id) {
               const label = document.querySelector(\`label[for="\${id}"]\`);
