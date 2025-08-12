@@ -44,6 +44,12 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [scenario, setScenario] = useState<TestScenario | null>(null)
   const [loading, setLoading] = useState(true)
+  const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const showFeedback = (message: string, type: 'success' | 'error') => {
+    setFeedback({ message, type })
+    setTimeout(() => setFeedback(null), 3000) // 3초 후 자동 숨김
+  }
 
   useEffect(() => {
     loadScenario()
@@ -128,7 +134,14 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
   }
 
   const addElementAsNode = async () => {
-    if (!lastPickedElement || !currentScenarioId) return
+    if (!currentScenarioId) {
+      showFeedback('먼저 시나리오를 선택하세요', 'error')
+      return
+    }
+    if (!lastPickedElement) {
+      showFeedback('먼저 Inspector에서 요소를 선택하세요', 'error')
+      return
+    }
 
     const newNode: StateNode = {
       id: Date.now().toString(),
@@ -155,39 +168,74 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
       })
       // 시나리오 재로드하여 노드 동기화
       await loadScenario()
+      showFeedback('액션 노드가 추가되었습니다', 'success')
     } catch (error) {
       console.error('Failed to add step:', error)
+      showFeedback('액션 노드 추가에 실패했습니다', 'error')
     }
   }
 
   const addAssertionNode = async () => {
-    if (!currentScenarioId) return
-
-    const newNode: StateNode = {
-      id: Date.now().toString(),
-      name: '새 검증',
-      type: 'assertion',
-      x: 50 + nodes.length * 150,
-      y: 250,
-      connections: []
+    if (!currentScenarioId) {
+      showFeedback('먼저 시나리오를 선택하세요', 'error')
+      return
     }
 
-    setNodes(prev => [...prev, newNode])
+    // 검증 조건을 간단하게 설정할 수 있는 기본 검증 추가
+    // 실제로는 모달이나 폼으로 상세 설정을 받아야 함
+    const defaultAssertion = {
+      type: 'visible' as const,
+      expected: 'true'
+    }
+
+    try {
+      await StorageManager.addStep(currentScenarioId, {
+        type: 'assert',
+        element: {
+          selector: lastPickedElement?.selector || lastPickedElement?.detailedAnalysis?.selectorStrategies.css.selector || 'body',
+          role: lastPickedElement?.role || 'generic',
+          name: lastPickedElement?.name || '검증 대상'
+        },
+        assertion: defaultAssertion
+      })
+      
+      // 시나리오 재로드하여 노드 동기화
+      await loadScenario()
+      
+      showFeedback('검증 노드가 추가되었습니다', 'success')
+    } catch (error) {
+      console.error('Failed to add assertion step:', error)
+      showFeedback('검증 노드 추가에 실패했습니다', 'error')
+    }
   }
 
   const addConditionNode = async () => {
-    if (!currentScenarioId) return
-
-    const newNode: StateNode = {
-      id: Date.now().toString(),
-      name: '새 조건',
-      type: 'condition',
-      x: 50 + nodes.length * 150,
-      y: 200,
-      connections: []
+    if (!currentScenarioId) {
+      showFeedback('먼저 시나리오를 선택하세요', 'error')
+      return
     }
 
-    setNodes(prev => [...prev, newNode])
+    // 조건 노드는 현재 storage에서 지원하지 않으므로 
+    // 일단 대기(wait) 스텝으로 추가
+    try {
+      await StorageManager.addStep(currentScenarioId, {
+        type: 'wait',
+        element: {
+          selector: 'body',
+          role: 'generic',
+          name: '대기 조건'
+        },
+        value: '1000' // 1초 대기
+      })
+      
+      // 시나리오 재로드하여 노드 동기화
+      await loadScenario()
+      
+      showFeedback('대기 노드가 추가되었습니다', 'success')
+    } catch (error) {
+      console.error('Failed to add condition step:', error)
+      showFeedback('대기 노드 추가에 실패했습니다', 'error')
+    }
   }
 
   const deleteNode = async (nodeId: string) => {
@@ -359,6 +407,17 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
           </Button>
         </div>
       </div>
+
+      {/* 피드백 메시지 */}
+      {feedback && (
+        <div className={`mx-3 p-2 rounded text-sm ${
+          feedback.type === 'success' 
+            ? 'bg-green-100 text-green-800 border border-green-200' 
+            : 'bg-red-100 text-red-800 border border-red-200'
+        }`}>
+          {feedback.message}
+        </div>
+      )}
 
       {/* 플로우 캔버스 */}
       <div className="flex-1 p-3">
