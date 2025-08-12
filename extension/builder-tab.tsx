@@ -18,7 +18,9 @@ import {
   Eye,
   CheckCircle,
   AlertTriangle,
-  Info
+  Info,
+  X,
+  Save
 } from 'lucide-react'
 
 interface BuilderTabProps {
@@ -125,7 +127,7 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
     }
   }
 
-  const addElementAsNode = () => {
+  const addElementAsNode = async () => {
     if (!lastPickedElement || !currentScenarioId) return
 
     const newNode: StateNode = {
@@ -139,6 +141,127 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
     }
 
     setNodes(prev => [...prev, newNode])
+    
+    // 시나리오에도 실제 스텝으로 추가
+    try {
+      await StorageManager.addStep(currentScenarioId, {
+        type: 'click',
+        element: {
+          selector: lastPickedElement.selector || lastPickedElement.detailedAnalysis?.selectorStrategies.css.selector,
+          role: lastPickedElement.role,
+          name: lastPickedElement.name,
+          analysis: lastPickedElement.detailedAnalysis
+        }
+      })
+      // 시나리오 재로드하여 노드 동기화
+      await loadScenario()
+    } catch (error) {
+      console.error('Failed to add step:', error)
+    }
+  }
+
+  const addAssertionNode = async () => {
+    if (!currentScenarioId) return
+
+    const newNode: StateNode = {
+      id: Date.now().toString(),
+      name: '새 검증',
+      type: 'assertion',
+      x: 50 + nodes.length * 150,
+      y: 250,
+      connections: []
+    }
+
+    setNodes(prev => [...prev, newNode])
+  }
+
+  const addConditionNode = async () => {
+    if (!currentScenarioId) return
+
+    const newNode: StateNode = {
+      id: Date.now().toString(),
+      name: '새 조건',
+      type: 'condition',
+      x: 50 + nodes.length * 150,
+      y: 200,
+      connections: []
+    }
+
+    setNodes(prev => [...prev, newNode])
+  }
+
+  const deleteNode = async (nodeId: string) => {
+    if (!currentScenarioId) return
+    
+    // 시작/종료 노드는 삭제 불가
+    if (nodeId === 'start' || nodeId === 'end') return
+
+    // 노드에 연결된 시나리오 스텝도 함께 삭제
+    const node = nodes.find(n => n.id === nodeId)
+    if (node?.stepData) {
+      try {
+        // StorageManager에 deleteStep 메소드가 있다면 사용
+        // 현재는 시나리오 전체를 다시 로드
+        await loadScenario()
+      } catch (error) {
+        console.error('Failed to delete step:', error)
+      }
+    }
+
+    setNodes(prev => prev.filter(n => n.id !== nodeId))
+    
+    // 연결선도 정리
+    setNodes(prev => prev.map(node => ({
+      ...node,
+      connections: node.connections.filter(connId => connId !== nodeId)
+    })))
+  }
+
+  const moveNode = (nodeId: string, newX: number, newY: number) => {
+    setNodes(prev => prev.map(node => 
+      node.id === nodeId ? { ...node, x: newX, y: newY } : node
+    ))
+  }
+
+  const saveFlowToScenario = async () => {
+    if (!currentScenarioId || !scenario) return
+
+    try {
+      // 노드들을 TestStep 순서대로 정렬 (start -> action/assertion -> end)
+      const actionNodes = nodes.filter(n => 
+        n.type === 'action' || n.type === 'assertion' || n.type === 'condition'
+      ).sort((a, b) => a.x - b.x) // x 좌표로 정렬
+
+      // 기존 스텝들을 모두 삭제하고 새로운 플로우로 교체
+      const newSteps = actionNodes.map((node, index) => {
+        if (node.stepData) {
+          return node.stepData // 기존 스텝 데이터 유지
+        } else {
+          // 새로운 노드를 스텝으로 변환
+          return {
+            id: node.id,
+            type: node.type === 'assertion' ? 'assert' : 'click',
+            timestamp: Date.now(),
+            element: node.elementData ? {
+              selector: node.elementData.selector || 'unknown',
+              role: node.elementData.role,
+              name: node.elementData.name
+            } : undefined
+          }
+        }
+      })
+
+      // 시나리오 업데이트 (스텝 교체)
+      await StorageManager.updateScenario(currentScenarioId, {
+        steps: newSteps,
+        updatedAt: Date.now()
+      })
+
+      // 시나리오 재로드
+      await loadScenario()
+    } catch (error) {
+      console.error('Failed to save flow:', error)
+    }
   }
 
   const getNodeIcon = (type: StateNode['type']) => {
@@ -200,10 +323,39 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
             variant="outline"
             onClick={addElementAsNode}
             disabled={!lastPickedElement}
-            title={!lastPickedElement ? "Inspector에서 요소를 선택하세요" : "선택된 요소를 노드로 추가"}
+            title={!lastPickedElement ? "Inspector에서 요소를 선택하세요" : "선택된 요소를 액션 노드로 추가"}
           >
-            <Plus className="w-3 h-3 mr-1" />
-            요소 추가
+            <Mouse className="w-3 h-3 mr-1" />
+            액션
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={addAssertionNode}
+            disabled={!currentScenarioId}
+            title="검증 노드 추가"
+          >
+            <CheckCircle className="w-3 h-3 mr-1" />
+            검증
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={addConditionNode}
+            disabled={!currentScenarioId}
+            title="조건 노드 추가"
+          >
+            <Diamond className="w-3 h-3 mr-1" />
+            조건
+          </Button>
+          <Button
+            size="sm"
+            onClick={saveFlowToScenario}
+            disabled={!currentScenarioId || nodes.length <= 2}
+            title="플로우를 시나리오로 저장"
+          >
+            <Save className="w-3 h-3 mr-1" />
+            저장
           </Button>
         </div>
       </div>
@@ -219,15 +371,50 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
                   <div
                     style={{ left: node.x, top: node.y }}
                     className={`
-                      relative w-32 p-2 rounded-lg border-2 cursor-pointer transition-all
+                      relative w-32 p-2 rounded-lg border-2 cursor-move transition-all group
                       ${getNodeColor(node.type)}
                       ${selectedNode === node.id ? 'ring-2 ring-primary' : ''}
                     `}
                     onClick={() => setSelectedNode(selectedNode === node.id ? null : node.id)}
+                    onMouseDown={(e) => {
+                      if (e.button === 0) { // Left click
+                        const startX = e.clientX - node.x
+                        const startY = e.clientY - node.y
+                        
+                        const handleMouseMove = (e: MouseEvent) => {
+                          const newX = Math.max(0, e.clientX - startX)
+                          const newY = Math.max(0, e.clientY - startY)
+                          moveNode(node.id, newX, newY)
+                        }
+                        
+                        const handleMouseUp = () => {
+                          document.removeEventListener('mousemove', handleMouseMove)
+                          document.removeEventListener('mouseup', handleMouseUp)
+                        }
+                        
+                        document.addEventListener('mousemove', handleMouseMove)
+                        document.addEventListener('mouseup', handleMouseUp)
+                      }
+                    }}
                   >
-                    <div className="flex items-center gap-1 mb-1">
-                      {getNodeIcon(node.type)}
-                      <span className="text-xs font-medium truncate">{node.name}</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        {getNodeIcon(node.type)}
+                        <span className="text-xs font-medium truncate">{node.name}</span>
+                      </div>
+                      
+                      {/* 삭제 버튼 (호버 시 표시) */}
+                      {node.id !== 'start' && node.id !== 'end' && (
+                        <button
+                          className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 p-0.5 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteNode(node.id)
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                     
                     {node.elementData && (
