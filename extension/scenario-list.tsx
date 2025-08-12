@@ -4,8 +4,11 @@ import { Badge } from '../components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { ScrollArea } from '../components/ui/scroll-area'
+import { Progress } from '../components/ui/progress'
+import { Alert, AlertDescription } from '../components/ui/alert'
 import { StorageManager, type TestScenario } from './storage'
-import { Play, Edit, Trash2, Clock, Tag, Plus, Search } from 'lucide-react'
+import { TestRunner, type TestRunResult, formatTestDuration, getTestStatusBadge } from './test-runner'
+import { Play, Edit, Trash2, Clock, Tag, Plus, Search, Square, AlertCircle } from 'lucide-react'
 
 interface ScenarioListProps {
   currentScenarioId?: string | null
@@ -17,6 +20,10 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
   const [scenarios, setScenarios] = useState<TestScenario[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
+  const [runningScenarioId, setRunningScenarioId] = useState<string | null>(null)
+  const [runProgress, setRunProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
+  const [runError, setRunError] = useState<string | null>(null)
+  const [lastRunResult, setLastRunResult] = useState<TestRunResult | null>(null)
 
   useEffect(() => {
     loadScenarios()
@@ -39,6 +46,41 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
       await loadScenarios()
     } catch (error) {
       console.error('Failed to delete scenario:', error)
+    }
+  }
+
+  const runScenario = async (scenarioId: string) => {
+    if (runningScenarioId) return // 이미 실행 중
+
+    setRunningScenarioId(scenarioId)
+    setRunProgress({ current: 0, total: 0 })
+    setRunError(null)
+    setLastRunResult(null)
+
+    try {
+      const testRunner = TestRunner.getInstance()
+      const result = await testRunner.runScenario(
+        scenarioId,
+        (current, total, currentStep) => {
+          setRunProgress({ current, total })
+        }
+      )
+      
+      setLastRunResult(result)
+      await loadScenarios() // 시나리오 상태 업데이트 반영
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다')
+    } finally {
+      setRunningScenarioId(null)
+      setRunProgress({ current: 0, total: 0 })
+    }
+  }
+
+  const cancelRun = () => {
+    if (runningScenarioId) {
+      TestRunner.getInstance().cancelRun()
+      setRunningScenarioId(null)
+      setRunProgress({ current: 0, total: 0 })
     }
   }
 
@@ -115,6 +157,25 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
         />
       </div>
 
+      {/* 실행 오류 표시 */}
+      {runError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{runError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* 실행 결과 표시 */}
+      {lastRunResult && (
+        <Alert variant={lastRunResult.status === 'passed' ? 'default' : 'destructive'}>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            시나리오 실행 {lastRunResult.status === 'passed' ? '성공' : '실패'}: {' '}
+            {lastRunResult.passedSteps}/{lastRunResult.totalSteps} 스텝 통과 ({formatTestDuration(lastRunResult.duration)})
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Scenario List */}
       <ScrollArea className="flex-1">
         {filteredScenarios.length > 0 ? (
@@ -133,6 +194,36 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
                       {scenario.name}
                     </CardTitle>
                     <div className="flex gap-1 ml-2">
+                      {/* 실행/취소 버튼 */}
+                      {runningScenarioId === scenario.id ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-auto p-1 text-orange-600 hover:text-orange-700"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            cancelRun()
+                          }}
+                          title="실행 취소"
+                        >
+                          <Square className="w-3 h-3" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-auto p-1 text-green-600 hover:text-green-700"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            runScenario(scenario.id)
+                          }}
+                          disabled={!!runningScenarioId || scenario.steps.length === 0}
+                          title={scenario.steps.length === 0 ? "스텝이 없습니다" : "시나리오 실행"}
+                        >
+                          <Play className="w-3 h-3" />
+                        </Button>
+                      )}
+                      
                       <Button
                         size="sm"
                         variant="ghost"
@@ -188,6 +279,17 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
                           +{scenario.tags.length - 3}
                         </span>
                       )}
+                    </div>
+                  )}
+
+                  {/* 실행 진행 상황 */}
+                  {runningScenarioId === scenario.id && runProgress.total > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span>실행 중: {runProgress.current}/{runProgress.total}</span>
+                        <span>{Math.round((runProgress.current / runProgress.total) * 100)}%</span>
+                      </div>
+                      <Progress value={(runProgress.current / runProgress.total) * 100} className="h-1" />
                     </div>
                   )}
 

@@ -8,6 +8,8 @@ import { EventRecorder, type RecordedEvent } from './event-recorder'
 import type { PickedElementMeta, RuntimeMessage, AssertionConfig, TestStep } from './types'
 import { InspectorDetail } from './inspector-detail'
 import { ScenarioList } from './scenario-list'
+import { ReportTab } from './report-tab'
+import { BuilderTab } from './builder-tab'
 import { Button } from '../components/ui/button'
 import { Badge } from '../components/ui/badge'
 import { Switch } from '../components/ui/switch'
@@ -521,8 +523,8 @@ function App() {
             )}
           </TabsContent>
 
-          <TabsContent value="builder" className="flex-1 mt-0 p-3">
-            <p className="text-sm text-muted-foreground">빌더 탭은 모델 기반 테스트 구성을 제공합니다. (모형 UI)</p>
+          <TabsContent value="builder" className="flex-1 mt-0 overflow-hidden">
+            <BuilderTab currentScenarioId={currentScenarioId} lastPickedElement={lastPicked} />
           </TabsContent>
 
           <TabsContent value="scenario" className="flex-1 mt-0 p-3 overflow-hidden">
@@ -533,8 +535,8 @@ function App() {
             />
           </TabsContent>
 
-          <TabsContent value="report" className="flex-1 mt-0 p-3">
-            <p className="text-sm text-muted-foreground">테스트 리포트 요약을 확인합니다. (모형 UI)</p>
+          <TabsContent value="report" className="flex-1 mt-0 overflow-hidden">
+            <ReportTab currentScenarioId={currentScenarioId} />
           </TabsContent>
         </div>
       </Tabs>
