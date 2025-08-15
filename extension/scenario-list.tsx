@@ -6,9 +6,10 @@ import { Input } from '../components/ui/input'
 import { ScrollArea } from '../components/ui/scroll-area'
 import { Progress } from '../components/ui/progress'
 import { Alert, AlertDescription } from '../components/ui/alert'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
 import { StorageManager, type TestScenario } from './storage'
-import { TestRunner, type TestRunResult, formatTestDuration, getTestStatusBadge } from './test-runner'
-import { Play, Edit, Trash2, Clock, Tag, Plus, Search, Square, AlertCircle } from 'lucide-react'
+import { TestRunner, type TestRunResult, type StepResult, formatTestDuration, getTestStatusBadge } from './test-runner'
+import { Play, Edit, Trash2, Clock, Tag, Plus, Search, Square, AlertCircle, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock as ClockIcon } from 'lucide-react'
 
 interface ScenarioListProps {
   currentScenarioId?: string | null
@@ -24,6 +25,7 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
   const [runProgress, setRunProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
   const [runError, setRunError] = useState<string | null>(null)
   const [lastRunResult, setLastRunResult] = useState<TestRunResult | null>(null)
+  const [showDetailedResults, setShowDetailedResults] = useState(false)
 
   useEffect(() => {
     loadScenarios()
@@ -56,6 +58,7 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
     setRunProgress({ current: 0, total: 0 })
     setRunError(null)
     setLastRunResult(null)
+    setShowDetailedResults(false)
 
     try {
       const testRunner = TestRunner.getInstance()
@@ -121,6 +124,50 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
     return date.toLocaleDateString()
   }
 
+  const getStepStatusIcon = (status: StepResult['status']) => {
+    switch (status) {
+      case 'passed':
+        return <CheckCircle className="w-4 h-4 text-green-500" />
+      case 'failed':
+        return <XCircle className="w-4 h-4 text-red-500" />
+      case 'skipped':
+        return <ClockIcon className="w-4 h-4 text-yellow-500" />
+      default:
+        return <ClockIcon className="w-4 h-4 text-gray-500" />
+    }
+  }
+
+  const getStepStatusColor = (status: StepResult['status']) => {
+    switch (status) {
+      case 'passed':
+        return 'text-green-700 bg-green-50 border-green-200'
+      case 'failed':
+        return 'text-red-700 bg-red-50 border-red-200'
+      case 'skipped':
+        return 'text-yellow-700 bg-yellow-50 border-yellow-200'
+      default:
+        return 'text-gray-700 bg-gray-50 border-gray-200'
+    }
+  }
+
+  const getStepTypeLabel = (type: string) => {
+    switch (type) {
+      case 'click': return '클릭'
+      case 'input': return '입력'
+      case 'select': return '선택'
+      case 'hover': return '호버'
+      case 'scroll': return '스크롤'
+      case 'wait': return '대기'
+      case 'assert': return '검증'
+      default: return type
+    }
+  }
+
+  const formatStepDuration = (duration: number) => {
+    if (duration < 1000) return `${duration}ms`
+    return `${(duration / 1000).toFixed(1)}s`
+  }
+
   const filteredScenarios = scenarios.filter(scenario =>
     scenario.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     scenario.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -169,11 +216,112 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
       {lastRunResult && (
         <Alert variant={lastRunResult.status === 'passed' ? 'default' : 'destructive'}>
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            시나리오 실행 {lastRunResult.status === 'passed' ? '성공' : '실패'}: {' '}
-            {lastRunResult.passedSteps}/{lastRunResult.totalSteps} 스텝 통과 ({formatTestDuration(lastRunResult.duration)})
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              시나리오 실행 {lastRunResult.status === 'passed' ? '성공' : '실패'}: {' '}
+              {lastRunResult.passedSteps}/{lastRunResult.totalSteps} 스텝 통과 ({formatTestDuration(lastRunResult.duration)})
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowDetailedResults(!showDetailedResults)}
+              className="ml-2"
+            >
+              {showDetailedResults ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              상세보기
+            </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* 상세 실행 결과 */}
+      {lastRunResult && showDetailedResults && (
+        <Card className="border-2 max-h-64 overflow-y-auto">
+          <CardHeader className="pb-2 sticky top-0 bg-card border-b">
+            <CardTitle className="text-sm">실행 상세 결과</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="text-center p-2 bg-green-50 rounded border border-green-200">
+                <span className="text-muted-foreground block">총 실행 시간</span>
+                <div className="font-semibold text-green-700">{formatTestDuration(lastRunResult.duration)}</div>
+              </div>
+              <div className="text-center p-2 bg-green-50 rounded border border-green-200">
+                <span className="text-muted-foreground block">성공한 스텝</span>
+                <div className="font-semibold text-green-700">{lastRunResult.passedSteps}개</div>
+              </div>
+              <div className="text-center p-2 bg-red-50 rounded border border-red-200">
+                <span className="text-muted-foreground block">실패한 스텝</span>
+                <div className="font-semibold text-red-700">{lastRunResult.failedSteps}개</div>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground border-b pb-1">스텝별 실행 결과</div>
+              {lastRunResult.stepResults.map((stepResult, index) => (
+                <div
+                  key={stepResult.stepId}
+                  className={`p-3 rounded-lg border text-xs ${getStepStatusColor(stepResult.status)}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {getStepStatusIcon(stepResult.status)}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold truncate">
+                          {index + 1}. {getStepTypeLabel(stepResult.stepType)}
+                        </div>
+                        {stepResult.description && (
+                          <div className="text-muted-foreground truncate">
+                            {stepResult.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-muted-foreground font-mono">{formatStepDuration(stepResult.duration)}</span>
+                      <Badge variant="outline" className={`text-xs ${getStepStatusColor(stepResult.status)}`}>
+                        {stepResult.status === 'passed' ? '성공' : stepResult.status === 'failed' ? '실패' : '건너뜀'}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  {/* 스텝 상세 정보 */}
+                  <div className="mt-2 space-y-1">
+                    {stepResult.selector && (
+                      <div className="text-muted-foreground">
+                        <span className="font-medium">선택자:</span> 
+                        <span className="font-mono text-xs break-all ml-1">{stepResult.selector}</span>
+                      </div>
+                    )}
+                    {stepResult.assertType && (
+                      <div className="text-muted-foreground">
+                        <span className="font-medium">검증 타입:</span> 
+                        <span className="ml-1">{stepResult.assertType}</span>
+                      </div>
+                    )}
+                    {stepResult.error && (
+                      <div className="text-red-700 bg-red-50 p-2 rounded border border-red-200">
+                        <span className="font-medium">오류:</span> 
+                        <span className="ml-1 break-words">{stepResult.error}</span>
+                      </div>
+                    )}
+                    {stepResult.assertion && (
+                      <div className="text-muted-foreground">
+                        <span className="font-medium">검증 결과:</span> 
+                        <span className="ml-1 break-words">{stepResult.assertion.message}</span>
+                        {stepResult.assertion.actual !== undefined && (
+                          <div className="mt-1 font-mono text-xs bg-muted p-1 rounded">
+                            실제값: {String(stepResult.assertion.actual)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Scenario List */}
@@ -190,9 +338,9 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-sm line-clamp-1">
-                      {scenario.name}
-                    </CardTitle>
+                                    <CardTitle className="text-sm line-clamp-1 flex-1 min-w-0">
+                  {scenario.name}
+                </CardTitle>
                     <div className="flex gap-1 ml-2">
                       {/* 실행/취소 버튼 */}
                       {runningScenarioId === scenario.id ? (
@@ -251,16 +399,16 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {scenario.description && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">
+                    <p className="text-xs text-muted-foreground line-clamp-2 break-words">
                       {scenario.description}
                     </p>
                   )}
                   
-                  <div className="flex items-center gap-2">
-                    <Badge className={`text-xs ${getStatusColor(scenario.status)}`}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={`text-xs ${getStatusColor(scenario.status)} flex-shrink-0`}>
                       {getStatusLabel(scenario.status)}
                     </Badge>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
                       <Clock className="w-3 h-3" />
                       {scenario.steps.length}개 스텝
                     </div>
@@ -268,14 +416,14 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
 
                   {scenario.tags.length > 0 && (
                     <div className="flex items-center gap-1 flex-wrap">
-                      <Tag className="w-3 h-3 text-muted-foreground" />
+                      <Tag className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                       {scenario.tags.slice(0, 3).map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs">
+                        <Badge key={tag} variant="outline" className="text-xs truncate max-w-20">
                           {tag}
                         </Badge>
                       ))}
                       {scenario.tags.length > 3 && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-muted-foreground flex-shrink-0">
                           +{scenario.tags.length - 3}
                         </span>
                       )}

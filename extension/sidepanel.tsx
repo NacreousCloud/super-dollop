@@ -160,6 +160,7 @@ function App() {
     }
     chrome.tabs.sendMessage(tabId, { type: 'START_INSPECT' }, () => {
       if (chrome.runtime.lastError) {
+        console.error('메시지 전송 실패:', chrome.runtime.lastError)
         setError('메시지 전송 실패: 콘텐츠 스크립트가 응답하지 않습니다.')
       } else {
         setError(null)

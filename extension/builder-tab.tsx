@@ -78,14 +78,14 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
   const convertStepsToNodes = (scenario: TestScenario) => {
     const newNodes: StateNode[] = []
     
-    // 시작 노드 추가
+    // 시작 노드 추가 (항상 표시)
     newNodes.push({
       id: 'start',
       name: '시작',
       type: 'start',
       x: 50,
       y: 50,
-      connections: scenario.steps.length > 0 ? [scenario.steps[0].id] : []
+      connections: scenario.steps.length > 0 ? [scenario.steps[0].id] : ['end']
     })
 
     // 스텝들을 노드로 변환
@@ -101,21 +101,25 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
         y: 50,
         elementData: step.element,
         stepData: step,
-        connections: nextStepId === 'end' ? ['end'] : [nextStepId]
+        connections: [nextStepId]
       })
     })
 
-    // 종료 노드 추가
-    if (scenario.steps.length > 0) {
-      newNodes.push({
-        id: 'end',
-        name: '종료',
-        type: 'end',
-        x: 50 + (scenario.steps.length + 1) * 150,
-        y: 50,
-        connections: []
-      })
-    }
+    // 종료 노드 추가 (항상 표시)
+    newNodes.push({
+      id: 'end',
+      name: '종료',
+      type: 'end',
+      x: 50 + (scenario.steps.length + 1) * 150,
+      y: 50,
+      connections: []
+    })
+
+    // 디버그 로그
+    console.debug('[Builder] convertStepsToNodes', {
+      steps: scenario.steps.length,
+      nodes: newNodes.length
+    })
 
     setNodes(newNodes)
   }
@@ -356,7 +360,7 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* 헤더 */}
       <div className="flex items-center justify-between p-3 border-b">
         <div>
@@ -419,11 +423,16 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
         </div>
       )}
 
+      {/* 요약/디버그 */}
+      <div className="px-3 text-xs text-muted-foreground">
+        <div>시나리오: {scenario ? scenario.name : '없음'} / 스텝: {scenario?.steps.length ?? 0} / 노드: {nodes.length}</div>
+      </div>
+
       {/* 플로우 캔버스 */}
-      <div className="flex-1 p-3">
+      <div className="flex-1 min-h-0 p-3">
         {nodes.length > 0 ? (
-          <ScrollArea className="h-full">
-            <div className="relative bg-gray-50 rounded-lg p-4 min-h-[400px]">
+          <div className="h-full min-h-0 overflow-auto">
+            <div className="relative bg-gray-50 rounded-lg p-4 min-h-[400px] w-full min-w-[640px]">
               {/* 노드들 */}
               {nodes.map((node) => (
                 <div key={node.id} className="absolute">
@@ -531,7 +540,7 @@ export function BuilderTab({ currentScenarioId, lastPickedElement }: BuilderTabP
                 </div>
               ))}
             </div>
-          </ScrollArea>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">

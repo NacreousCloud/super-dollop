@@ -11,7 +11,11 @@ export type RuntimeMessage =
   | { type: 'ELEMENT_PICKED'; payload: PickedElementMeta }
   | { type: 'PING' }
   | { type: 'START_INSPECT' }
-  | { type: 'STOP_INSPECT' } 
+  | { type: 'STOP_INSPECT' }
+  | { type: 'QUERY_ELEMENT'; selector: string }
+  | { type: 'CLICK_ELEMENT'; selector: string }
+  | { type: 'INPUT_ELEMENT'; selector: string; value: string }
+  | { type: 'ASSERT_ELEMENT'; selector: string; assertion: AssertionConfig } 
 
 export interface TestStep {
   id: string;

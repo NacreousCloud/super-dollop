@@ -17,6 +17,10 @@ export interface TestRunResult {
 
 export interface StepResult {
   stepId: string;
+  stepType: TestStep['type'];
+  selector?: string;
+  description?: string;
+  assertType?: string;
   status: 'passed' | 'failed' | 'skipped';
   duration: number;
   error?: string;
@@ -143,24 +147,31 @@ export class TestRunner {
    */
   private async executeStep(step: TestStep): Promise<StepResult> {
     const startTime = Date.now();
+    const baseMeta = {
+      stepId: step.id,
+      stepType: step.type,
+      selector: step.element?.selector,
+      description: undefined, // storage.TestStep has no description
+      assertType: step.assertion?.type as any
+    } as Pick<StepResult, 'stepId' | 'stepType' | 'selector' | 'description' | 'assertType'>;
     
     try {
       switch (step.type) {
         case 'assert':
-          return await this.executeAssertStep(step, startTime);
+          return await this.executeAssertStep(step, startTime, baseMeta);
         
         case 'click':
-          return await this.executeClickStep(step, startTime);
+          return await this.executeClickStep(step, startTime, baseMeta);
         
         case 'input':
-          return await this.executeInputStep(step, startTime);
+          return await this.executeInputStep(step, startTime, baseMeta);
         
         case 'wait':
-          return await this.executeWaitStep(step, startTime);
+          return await this.executeWaitStep(step, startTime, baseMeta);
         
         default:
           return {
-            stepId: step.id,
+            ...baseMeta,
             status: 'skipped',
             duration: Date.now() - startTime,
             error: `지원하지 않는 스텝 타입: ${step.type}`
@@ -168,7 +179,7 @@ export class TestRunner {
       }
     } catch (error) {
       return {
-        stepId: step.id,
+        ...baseMeta,
         status: 'failed',
         duration: Date.now() - startTime,
         error: error instanceof Error ? error.message : String(error)
@@ -177,56 +188,12 @@ export class TestRunner {
   }
 
   /**
-   * 어설션 스텝 실행
+   * 클릭 스텝 실행
    */
-  private async executeAssertStep(step: TestStep, startTime: number): Promise<StepResult> {
-    if (!step.assertion || !step.element?.selector) {
-      return {
-        stepId: step.id,
-        status: 'failed',
-        duration: Date.now() - startTime,
-        error: '어설션 정보가 없습니다'
-      };
-    }
-
-    // storage.ts의 assertion 형식을 types.ts의 AssertionConfig로 변환
-    const assertionConfig = {
-      type: step.assertion.type as any, // 타입 변환 필요
-      expected: step.assertion.expected,
-      timeout: 5000,
-      retryInterval: 500
-    };
-
-    try {
-      const assertionResult = await this.engine.executeAssertion(
-        step.element.selector,
-        assertionConfig
-      );
-
-      return {
-        stepId: step.id,
-        status: assertionResult.success ? 'passed' : 'failed',
-        duration: Date.now() - startTime,
-        assertion: assertionResult,
-        error: assertionResult.success ? undefined : assertionResult.message
-      };
-    } catch (error) {
-      return {
-        stepId: step.id,
-        status: 'failed',
-        duration: Date.now() - startTime,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-
-  /**
-   * 클릭 스텝 실행 (시뮬레이션)
-   */
-  private async executeClickStep(step: TestStep, startTime: number): Promise<StepResult> {
+  private async executeClickStep(step: TestStep, startTime: number, meta: any): Promise<StepResult> {
     if (!step.element?.selector) {
       return {
-        stepId: step.id,
+        ...meta,
         status: 'failed',
         duration: Date.now() - startTime,
         error: '셀렉터 정보가 없습니다'
@@ -234,30 +201,29 @@ export class TestRunner {
     }
 
     try {
-      // 실제 클릭은 content script를 통해 실행해야 함
-      // 여기서는 요소 존재 여부만 확인
-      const element = document.querySelector(step.element.selector);
-      
-      if (!element) {
+      // content script에 클릭 요청
+      const response = await this.sendMessageToContentScript({
+        type: 'CLICK_ELEMENT',
+        selector: step.element.selector
+      });
+
+      if (!response.ok) {
         return {
-          stepId: step.id,
+          ...meta,
           status: 'failed',
           duration: Date.now() - startTime,
-          error: '요소를 찾을 수 없습니다'
+          error: response.error || '클릭 실행 중 오류가 발생했습니다'
         };
       }
 
-      // 시뮬레이션 딜레이
-      await this.sleep(500);
-
       return {
-        stepId: step.id,
+        ...meta,
         status: 'passed',
         duration: Date.now() - startTime
       };
     } catch (error) {
       return {
-        stepId: step.id,
+        ...meta,
         status: 'failed',
         duration: Date.now() - startTime,
         error: error instanceof Error ? error.message : String(error)
@@ -266,41 +232,122 @@ export class TestRunner {
   }
 
   /**
-   * 입력 스텝 실행 (시뮬레이션)
+   * 입력 스텝 실행
    */
-  private async executeInputStep(step: TestStep, startTime: number): Promise<StepResult> {
+  private async executeInputStep(step: TestStep, startTime: number, meta: any): Promise<StepResult> {
     if (!step.element?.selector) {
       return {
-        stepId: step.id,
+        ...meta,
         status: 'failed',
         duration: Date.now() - startTime,
         error: '셀렉터 정보가 없습니다'
       };
     }
 
+    if (!step.value) {
+      return {
+        ...meta,
+        status: 'failed',
+        duration: Date.now() - startTime,
+        error: '입력값이 없습니다'
+      };
+    }
+
     try {
-      const element = document.querySelector(step.element.selector) as HTMLInputElement;
-      
-      if (!element) {
+      // content script에 입력 요청
+      const response = await this.sendMessageToContentScript({
+        type: 'INPUT_ELEMENT',
+        selector: step.element.selector,
+        value: step.value
+      });
+
+      if (!response.ok) {
         return {
-          stepId: step.id,
+          ...meta,
           status: 'failed',
           duration: Date.now() - startTime,
-          error: '요소를 찾을 수 없습니다'
+          error: response.error || '입력 실행 중 오류가 발생했습니다'
         };
       }
 
-      // 시뮬레이션 딜레이
-      await this.sleep(300);
-
       return {
-        stepId: step.id,
+        ...meta,
         status: 'passed',
         duration: Date.now() - startTime
       };
     } catch (error) {
       return {
-        stepId: step.id,
+        ...meta,
+        status: 'failed',
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
+   * 검증 스텝 실행
+   */
+  private async executeAssertStep(step: TestStep, startTime: number, meta: any): Promise<StepResult> {
+    if (!step.element?.selector) {
+      return {
+        ...meta,
+        status: 'failed',
+        duration: Date.now() - startTime,
+        error: '셀렉터 정보가 없습니다'
+      };
+    }
+
+    if (!step.assertion) {
+      return {
+        ...meta,
+        status: 'failed',
+        duration: Date.now() - startTime,
+        error: '검증 설정이 없습니다'
+      };
+    }
+
+    try {
+      // storage.ts의 assertion 형식을 content script용으로 변환
+      const assertionConfig = {
+        type: step.assertion.type,
+        expected: step.assertion.expected
+      };
+
+      // content script에 검증 요청
+      const response = await this.sendMessageToContentScript({
+        type: 'ASSERT_ELEMENT',
+        selector: step.element.selector,
+        assertion: assertionConfig
+      });
+
+      if (!response.ok) {
+        return {
+          ...meta,
+          status: 'failed',
+          duration: Date.now() - startTime,
+          error: response.error || '검증 실행 중 오류가 발생했습니다'
+        };
+      }
+
+      const assertionResult: AssertionResult = {
+        success: response.success,
+        message: response.message,
+        actual: response.actual,
+        expected: step.assertion.expected,
+        timestamp: Date.now(),
+        duration: Date.now() - startTime
+      };
+
+      return {
+        ...meta,
+        status: response.success ? 'passed' : 'failed',
+        duration: Date.now() - startTime,
+        assertion: assertionResult
+      };
+    } catch (error) {
+      return {
+        ...meta,
         status: 'failed',
         duration: Date.now() - startTime,
         error: error instanceof Error ? error.message : String(error)
@@ -311,12 +358,12 @@ export class TestRunner {
   /**
    * 대기 스텝 실행
    */
-  private async executeWaitStep(step: TestStep, startTime: number): Promise<StepResult> {
+  private async executeWaitStep(step: TestStep, startTime: number, meta: any): Promise<StepResult> {
     const waitTime = parseInt(step.value || '1000', 10);
     await this.sleep(waitTime);
 
     return {
-      stepId: step.id,
+      ...meta,
       status: 'passed',
       duration: Date.now() - startTime
     };
@@ -324,6 +371,34 @@ export class TestRunner {
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * content script에 메시지 전송
+   */
+  private async sendMessageToContentScript(message: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs.length === 0) {
+          reject(new Error('활성 탭을 찾을 수 없습니다'));
+          return;
+        }
+
+        const activeTab = tabs[0];
+        if (!activeTab.id) {
+          reject(new Error('탭 ID를 찾을 수 없습니다'));
+          return;
+        }
+
+        chrome.tabs.sendMessage(activeTab.id, message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(response);
+        });
+      });
+    });
   }
 }
 
