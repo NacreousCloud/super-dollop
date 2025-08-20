@@ -371,7 +371,7 @@ function App() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
-        <TabsList className="grid grid-cols-4 mx-3 mt-2">
+        <TabsList className="mx-3 mt-2">
           <TabsTrigger value="inspector" className="text-xs font-medium">검사</TabsTrigger>
           <TabsTrigger value="builder" className="text-xs font-medium">빌더</TabsTrigger>
           <TabsTrigger value="scenario" className="text-xs font-medium">시나리오</TabsTrigger>
