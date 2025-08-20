@@ -396,12 +396,12 @@ function App() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-5 mx-3 mt-2">
-          <TabsTrigger value="record" className="text-xs">기록</TabsTrigger>
-          <TabsTrigger value="inspector" className="text-xs">인스펙터</TabsTrigger>
-          <TabsTrigger value="builder" className="text-xs">빌더</TabsTrigger>
-          <TabsTrigger value="scenario" className="text-xs">시나리오</TabsTrigger>
-          <TabsTrigger value="report" className="text-xs">리포트</TabsTrigger>
+        <TabsList className="grid grid-cols-5 mx-3 mt-2">
+          <TabsTrigger value="record" className="text-xs font-medium">기록</TabsTrigger>
+          <TabsTrigger value="inspector" className="text-xs font-medium">검사</TabsTrigger>
+          <TabsTrigger value="builder" className="text-xs font-medium">빌더</TabsTrigger>
+          <TabsTrigger value="scenario" className="text-xs font-medium">시나리오</TabsTrigger>
+          <TabsTrigger value="report" className="text-xs font-medium">보고</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 flex flex-col overflow-hidden">

@@ -42,7 +42,7 @@ export default function App() {
       )}
       
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="grid grid-cols-5 mx-3 mt-2 w-full">
+        <TabsList className="grid grid-cols-5 mx-3 mt-2 ">
           <TabsTrigger value="record" className="text-xs font-medium">기록</TabsTrigger>
           <TabsTrigger value="inspector" className="text-xs font-medium">검사</TabsTrigger>
           <TabsTrigger value="builder" className="text-xs font-medium">빌더</TabsTrigger>
