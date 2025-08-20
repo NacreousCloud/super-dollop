@@ -4,7 +4,7 @@ import './sidepanel.css'
 import { useActiveTab } from './hooks'
 import { ensureContentScript, isRestrictedUrl } from './utils'
 import { StorageManager, type TestScenario } from './storage'
-import { EventRecorder, type RecordedEvent } from './event-recorder'
+import { EventRecorder } from './event-recorder'
 import type { PickedElementMeta, RuntimeMessage, AssertionConfig, TestStep } from './types'
 import { InspectorDetail } from './inspector-detail'
 import { ScenarioList } from './scenario-list'
@@ -15,7 +15,7 @@ import { Badge } from '../components/ui/badge'
 import { Switch } from '../components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Alert, AlertDescription } from '../components/ui/alert'
-import { Save, Download, Play, Code, AlertTriangle, X, Lightbulb, Plus, Circle, Square, Mouse, Keyboard } from 'lucide-react'
+import { Save, Download, Play, Code, AlertTriangle, X, Lightbulb, Plus } from 'lucide-react'
 
 // 개발 환경인지 확장 프로그램 환경인지 확인
 const isExtension = typeof chrome !== 'undefined' && chrome.runtime
@@ -26,8 +26,7 @@ function App() {
   const tabUrl = tab?.url
   const [attached, setAttached] = useState(false)
   const [inspecting, setInspecting] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const [recordedEvents, setRecordedEvents] = useState<RecordedEvent[]>([])
+
   const [lastPicked, setLastPicked] = useState<PickedElementMeta | null>(
     null
   )
@@ -37,7 +36,7 @@ function App() {
   const [currentScenarioId, setCurrentScenarioId] = useState<string | null>(null)
   const [autoSave, setAutoSave] = useState(true)
 
-  const [activeTab, setActiveTab] = useState<'record' | 'inspector' | 'builder' | 'scenario' | 'report'>('builder')
+  const [activeTab, setActiveTab] = useState<'inspector' | 'builder' | 'scenario' | 'report'>('builder')
 
   // Load settings on mount
   useEffect(() => {
@@ -112,11 +111,6 @@ function App() {
   const detach = async () => {
     if (!isExtension || tabId == null) return
     
-    // Stop recording if active
-    if (recording) {
-      await stopRecording()
-    }
-    
     try {
       await chrome.debugger.detach({ tabId })
     } catch {
@@ -125,43 +119,7 @@ function App() {
     setAttached(false)
   }
 
-  const startRecording = async () => {
-    if (!isExtension) {
-      setError('개발 환경에서는 기록 기능이 불가능합니다.')
-      return
-    }
-    if (!tabId || !attached) {
-      setError('먼저 디버거를 연결해주세요.')
-      return
-    }
-
-    try {
-      const recorder = EventRecorder.getInstance()
-      await recorder.startRecording(tabId, currentScenarioId || undefined)
-      setRecording(true)
-      setRecordedEvents([])
-      setActiveTab('record')
-    } catch (err) {
-      setError('기록 시작 실패: ' + (err as Error).message)
-    }
-  }
-
-  const stopRecording = async () => {
-    if (!isExtension) return
-    try {
-      const recorder = EventRecorder.getInstance()
-      const events = await recorder.stopRecording()
-      setRecordedEvents(events)
-      setRecording(false)
-      
-      // Auto-save events if enabled and scenario exists
-      if (autoSave && currentScenarioId && events.length > 0) {
-        await recorder.saveEventsAsSteps()
-      }
-    } catch (err) {
-      setError('기록 중지 실패: ' + (err as Error).message)
-    }
-  }
+  
 
   const startInspect = async () => {
     if (!isExtension) {
@@ -313,18 +271,7 @@ function App() {
     }
   }
 
-  const getEventIcon = (type: string) => {
-    switch (type) {
-      case 'click': return <Mouse className="w-3 h-3 text-blue-600" />
-      case 'input': return <Keyboard className="w-3 h-3 text-green-600" />
-      case 'navigate': return <Play className="w-3 h-3 text-purple-600" />
-      default: return <Mouse className="w-3 h-3 text-gray-600" />
-    }
-  }
 
-  const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString()
-  }
 
   const mockJsonPreview = {
     scenario: "접근성 기반 테스트",
@@ -424,8 +371,7 @@ function App() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
-        <TabsList className="grid grid-cols-5 mx-3 mt-2">
-          <TabsTrigger value="record" className="text-xs font-medium">기록</TabsTrigger>
+        <TabsList className="grid grid-cols-4 mx-3 mt-2">
           <TabsTrigger value="inspector" className="text-xs font-medium">검사</TabsTrigger>
           <TabsTrigger value="builder" className="text-xs font-medium">빌더</TabsTrigger>
           <TabsTrigger value="scenario" className="text-xs font-medium">시나리오</TabsTrigger>
@@ -433,80 +379,6 @@ function App() {
         </TabsList>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <TabsContent value="record" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">이벤트 기록</h3>
-              {isExtension && (
-                !recording ? (
-                  <Button size="sm" onClick={startRecording} disabled={!attached}>
-                    <Circle className="w-3 h-3 mr-1" />
-                    기록 시작
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={stopRecording}>
-                    <Square className="w-3 h-3 mr-1" />
-                    기록 중지
-                  </Button>
-                )
-              )}
-            </div>
-
-            {!isExtension && (
-              <Alert className="bg-blue-50 border-blue-200">
-                <AlertTriangle className="h-4 w-4 text-blue-600" />
-                <AlertDescription className="text-blue-800">
-                  개발 환경에서는 기록 기능이 제한됩니다. 확장 프로그램에서 사용하세요.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {recording && (
-              <Alert className="bg-red-50 border-red-200">
-                <Circle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-800">
-                  이벤트를 기록하고 있습니다. 웹 페이지에서 상호작용하세요.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {recordedEvents.length > 0 ? (
-              <div className="space-y-2">
-                <div className="text-xs text-muted-foreground">
-                  기록된 이벤트 {recordedEvents.length}개
-                </div>
-                {recordedEvents.map((event) => (
-                  <div key={event.id} className="p-2 border rounded-lg bg-card">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getEventIcon(event.type)}
-                      <span className="text-sm font-medium capitalize">{event.type}</span>
-                      <Badge variant="outline" className="text-xs">
-                        {formatTimestamp(event.timestamp)}
-                      </Badge>
-                    </div>
-                    {event.target && (
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <div><strong>요소:</strong> {event.target.tagName}</div>
-                        {event.target.name && (
-                          <div><strong>이름:</strong> {event.target.name}</div>
-                        )}
-                        {event.value && (
-                          <div><strong>값:</strong> {event.value}</div>
-                        )}
-                        <code className="text-xs bg-muted p-1 rounded block break-all">
-                          {event.target.selector}
-                        </code>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-8">
-                {recording ? '상호작용을 기다리는 중...' : '기록 버튼을 눌러 이벤트 캡처를 시작하세요'}
-              </div>
-            )}
-          </TabsContent>
-
           <TabsContent value="inspector" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
             {isExtension ? (
               !inspecting ? (
@@ -537,12 +409,11 @@ function App() {
                 
                 {/* Quick Actions */}
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={addElementAsStep} className="flex-1">
-                    <Plus className="w-3 h-3 mr-1" />
-                    스텝 추가
-                  </Button>
                   <Button size="sm" variant="outline" onClick={createNewScenario}>
                     새 시나리오
+                  </Button>
+                  <Button size="sm" onClick={() => setActiveTab('builder')} className="flex-1">
+                    빌더에서 편집
                   </Button>
                 </div>
               </>
