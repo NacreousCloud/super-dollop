@@ -123,13 +123,13 @@ export function AssertionConfigComponent({ selector, onAdd, onCancel }: Assertio
               <SelectTrigger>
                 <SelectValue placeholder="검증 타입을 선택하세요" />
               </SelectTrigger>
-              <SelectContent className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-lg">
-                {Object.entries(assertionTypeLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+                              <SelectContent>
+                  {Object.entries(assertionTypeLabels).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
             </Select>
             <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-md">
               <Info className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
