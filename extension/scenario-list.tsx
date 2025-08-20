@@ -15,9 +15,10 @@ interface ScenarioListProps {
   currentScenarioId?: string | null
   onScenarioSelect?: (scenario: TestScenario) => void
   onCreateNew?: () => void
+  onEditScenario?: (scenario: TestScenario) => void
 }
 
-export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew }: ScenarioListProps) {
+export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew, onEditScenario }: ScenarioListProps) {
   const [scenarios, setScenarios] = useState<TestScenario[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -378,8 +379,9 @@ export function ScenarioList({ currentScenarioId, onScenarioSelect, onCreateNew 
                         className="h-auto p-1"
                         onClick={(e) => {
                           e.stopPropagation()
-                          // TODO: Implement edit functionality
+                          onEditScenario?.(scenario)
                         }}
+                        title="빌더에서 편집"
                       >
                         <Edit className="w-3 h-3" />
                       </Button>

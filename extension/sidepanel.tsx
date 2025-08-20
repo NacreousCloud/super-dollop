@@ -452,6 +452,10 @@ function App() {
               currentScenarioId={currentScenarioId}
               onScenarioSelect={(scenario: TestScenario) => setCurrentScenarioId(scenario.id)}
               onCreateNew={createNewScenario}
+              onEditScenario={(scenario: TestScenario) => {
+                setCurrentScenarioId(scenario.id)
+                setActiveTab('builder')
+              }}
             />
           </TabsContent>
 
