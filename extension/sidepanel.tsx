@@ -17,6 +17,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Alert, AlertDescription } from '../components/ui/alert'
 import { Save, Download, Play, Code, AlertTriangle, X, Lightbulb, Plus, Circle, Square, Mouse, Keyboard } from 'lucide-react'
 
+// 개발 환경인지 확장 프로그램 환경인지 확인
+const isExtension = typeof chrome !== 'undefined' && chrome.runtime
+
 function App() {
   const tab = useActiveTab()
   const tabId = tab?.id
@@ -45,6 +48,9 @@ function App() {
   }, [])
 
   useEffect(() => {
+    // 확장 프로그램 환경에서만 chrome API 사용
+    if (!isExtension) return
+
     const onMessage = async (msg: RuntimeMessage) => {
       if (msg.type === 'ELEMENT_PICKED') {
         setLastPicked(msg.payload)
@@ -73,6 +79,7 @@ function App() {
   }, [])
 
   const attachable = useMemo(() => {
+    if (!isExtension) return false // 개발 환경에서는 항상 false
     if (!tabUrl) return false
     try {
       const u = new URL(tabUrl)
@@ -84,6 +91,10 @@ function App() {
   }, [tabUrl])
 
   const attach = async () => {
+    if (!isExtension) {
+      setError('개발 환경에서는 디버거 연결이 불가능합니다.')
+      return
+    }
     if (tabId == null) return
     if (!attachable) {
       setError('해당 페이지에서는 동작하지 않습니다. 일반 웹 페이지(https://)에서 다시 시도하세요.')
@@ -99,7 +110,7 @@ function App() {
   }
 
   const detach = async () => {
-    if (tabId == null) return
+    if (!isExtension || tabId == null) return
     
     // Stop recording if active
     if (recording) {
@@ -115,6 +126,10 @@ function App() {
   }
 
   const startRecording = async () => {
+    if (!isExtension) {
+      setError('개발 환경에서는 기록 기능이 불가능합니다.')
+      return
+    }
     if (!tabId || !attached) {
       setError('먼저 디버거를 연결해주세요.')
       return
@@ -132,6 +147,7 @@ function App() {
   }
 
   const stopRecording = async () => {
+    if (!isExtension) return
     try {
       const recorder = EventRecorder.getInstance()
       const events = await recorder.stopRecording()
@@ -148,6 +164,10 @@ function App() {
   }
 
   const startInspect = async () => {
+    if (!isExtension) {
+      setError('개발 환경에서는 요소 검사가 불가능합니다.')
+      return
+    }
     if (tabId == null) return
     if (!attachable) {
       setError('해당 페이지에서는 동작하지 않습니다. 일반 웹 페이지(https://)에서 다시 시도하세요.')
@@ -171,12 +191,13 @@ function App() {
   }
 
   const stopInspect = () => {
-    if (tabId == null) return
+    if (!isExtension || tabId == null) return
     chrome.tabs.sendMessage(tabId, { type: 'STOP_INSPECT' })
     setInspecting(false)
   }
 
   const statusText = useMemo(() => {
+    if (!isExtension) return '개발 환경'
     if (tabId == null) return '활성 탭 없음'
     if (!attachable) return '지원 불가 탭(웹스토어/내부 페이지 등)'
     if (!attached) return '디버거 미연결'
@@ -187,7 +208,7 @@ function App() {
     try {
       const scenario = await StorageManager.addScenario({
         name: `테스트 시나리오 ${Date.now()}`,
-        description: `${tabUrl}에서 생성된 테스트`,
+        description: `${tabUrl || '개발 환경'}에서 생성된 테스트`,
         steps: [],
         tags: ['web', 'accessibility'],
         status: 'draft',
@@ -337,6 +358,11 @@ function App() {
       <div className="sp-header">
         <div className="sp-header-title">Cake</div>
         <div className="sp-header-sub">E2E Testing Tool</div>
+        {!isExtension && (
+          <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded mt-1">
+            개발 환경
+          </div>
+        )}
       </div>
 
       {/* Accessibility Warning */}
@@ -383,14 +409,16 @@ function App() {
         <Badge variant={attached ? "default" : "outline"} className="text-xs">
           {statusText}
         </Badge>
-        {!attached ? (
-          <Button size="sm" onClick={attach} disabled={tabId == null || !attachable}>
-            연결
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" onClick={detach}>
-            해제
-          </Button>
+        {isExtension && (
+          !attached ? (
+            <Button size="sm" onClick={attach} disabled={tabId == null || !attachable}>
+              연결
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={detach}>
+              해제
+            </Button>
+          )
         )}
       </div>
 
@@ -408,18 +436,29 @@ function App() {
           <TabsContent value="record" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium">이벤트 기록</h3>
-              {!recording ? (
-                <Button size="sm" onClick={startRecording} disabled={!attached}>
-                  <Circle className="w-3 h-3 mr-1" />
-                  기록 시작
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={stopRecording}>
-                  <Square className="w-3 h-3 mr-1" />
-                  기록 중지
-                </Button>
+              {isExtension && (
+                !recording ? (
+                  <Button size="sm" onClick={startRecording} disabled={!attached}>
+                    <Circle className="w-3 h-3 mr-1" />
+                    기록 시작
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={stopRecording}>
+                    <Square className="w-3 h-3 mr-1" />
+                    기록 중지
+                  </Button>
+                )
               )}
             </div>
+
+            {!isExtension && (
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertTriangle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  개발 환경에서는 기록 기능이 제한됩니다. 확장 프로그램에서 사용하세요.
+                </AlertDescription>
+              </Alert>
+            )}
 
             {recording && (
               <Alert className="bg-red-50 border-red-200">
@@ -469,14 +508,23 @@ function App() {
           </TabsContent>
 
           <TabsContent value="inspector" className="flex-1 mt-0 p-3 space-y-3 overflow-auto">
-            {!inspecting ? (
-              <Button onClick={startInspect} disabled={tabId == null} className="w-full">
-                요소 선택 시작
-              </Button>
+            {isExtension ? (
+              !inspecting ? (
+                <Button onClick={startInspect} disabled={tabId == null} className="w-full">
+                  요소 선택 시작
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={stopInspect} className="w-full">
+                  요소 선택 종료
+                </Button>
+              )
             ) : (
-              <Button variant="outline" onClick={stopInspect} className="w-full">
-                요소 선택 종료
-              </Button>
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertTriangle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  개발 환경에서는 요소 검사가 제한됩니다. 확장 프로그램에서 사용하세요.
+                </AlertDescription>
+              </Alert>
             )}
 
             {lastPicked?.detailedAnalysis ? (
@@ -594,7 +642,13 @@ function App() {
       </div>
 
       {/* Error Display */}
-      {!attachable && (
+      {!isExtension && (
+        <div className="p-3 bg-blue-50 border-t border-blue-200 text-blue-800 text-xs">
+          개발 환경입니다. 확장 프로그램에서 전체 기능을 사용하세요.
+        </div>
+      )}
+
+      {isExtension && !attachable && (
         <div className="p-3 bg-yellow-50 border-t border-yellow-200 text-yellow-800 text-xs">
           이 페이지에서는 동작하지 않습니다. 크롬 웹스토어/내부 페이지(chrome://) 등은 제한됩니다.
         </div>
@@ -609,5 +663,6 @@ function App() {
   )
 }
 
+// 개발 환경과 확장 프로그램 환경 모두에서 사용
 const container = document.getElementById('root')!
 createRoot(container).render(<App />) 
